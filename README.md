@@ -27,7 +27,7 @@ Installation
 
 
 ##  Project Structure
-
+```bash
 ai-agent-poc/
 ├── app.py           # CLI entry point
 ├── config.py        # Configuration
@@ -36,7 +36,7 @@ ai-agent-poc/
 ├── rag/             # Markdown RAG search
 ├── db/              # Database schema & seeds
 └── docs/            # Markdown knowledge base
-
+```
 ## Usage Examples
 
 ```bash
