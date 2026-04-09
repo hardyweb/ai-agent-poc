@@ -3,6 +3,8 @@ Markdown RAG Search Module
 ===========================
 Reads markdown files from /docs folder and searches them.
 Simple but effective - no vector DB needed for POC!
+
+ENHANCED: Now supports auto-reload and file watching!
 """
 
 import os
@@ -10,7 +12,10 @@ import re
 from pathlib import Path
 from typing import List, Dict, Optional
 from dataclasses import dataclass
+from datetime import datetime
+import logging
 
+logger = logging.getLogger(__name__)
 
 @dataclass
 class DocumentChunk:
@@ -19,7 +24,6 @@ class DocumentChunk:
     source: str
     section: str
     relevance_score: float
-
 
 class MarkdownSearcher:
     """
@@ -32,6 +36,8 @@ class MarkdownSearcher:
     4. Return top results
     
     No embeddings needed - using keyword overlap for simplicity!
+    
+    ENHANCED: Supports force_reload() and smart_reload()
     """
     
     def __init__(self, docs_dir: str = "./docs"):
@@ -198,11 +204,135 @@ class MarkdownSearcher:
     def list_available_docs(self) -> List[str]:
         """List all loaded document filenames"""
         return [doc['filename'] for doc in self.documents]
+    
+    # ================================================================
+    # NEW METHODS: Auto-Reload Feature
+    # ================================================================
+    
+    def force_reload(self, verbose: bool = True):
+        """
+        Force complete reload of all markdown documents.
+        
+        Call this when:
+        - /reload command issued
+        - File watcher detects changes
+        - Manual refresh needed
+        
+        Args:
+            verbose: Print status messages
+        """
+        if verbose:
+            print("\n" + "=" * 60)
+            print("🔄 FORCE RELOADING MARKDOWN DOCUMENTS")
+            print("=" * 60)
+        
+        # Clear existing data
+        old_doc_count = len(self.documents)
+        old_chunk_count = len(self.chunks)
+        
+        self.documents.clear()
+        self.chunks.clear()
+        
+        # Reload from scratch
+        self._load_documents()
+        self._create_chunks()
+        
+        if verbose:
+            print(f"\n✅ RELOAD COMPLETE")
+            print(f"   Documents: {old_doc_count} → {len(self.documents)}")
+            print(f"   Chunks: {old_chunk_count} → {len(self.chunks)}")
+            print("=" * 60 + "\n")
+        
+        # Log the reload
+        logger.info(f"🔄 Documents reloaded | Docs: {len(self.documents)}, Chunks: {len(self.chunks)}")
+    
+    def smart_reload(self, verbose: bool = True) -> bool:
+        """
+        Smart reload: check for changes first, only reload if needed.
+        
+        Uses FileWatcher to detect changes efficiently.
+        
+        Args:
+            verbose: Print messages
+            
+        Returns:
+            True if reload happened, False if no changes
+        """
+        try:
+            from rag.file_watcher import get_watcher
+            
+            watcher = get_watcher()
+            changes = watcher.check_for_changes()
+            
+            if changes:
+                if verbose:
+                    print(f"\n📝 Changes detected ({len(changes)}):")
+                    for change in changes:
+                        print(f"  • {change}")
+                    print("  → Auto-reloading...\n")
+                
+                self.force_reload(verbose=verbose)
+                return True
+            else:
+                # No changes, everything is fresh
+                return False
+                
+        except Exception as e:
+            logger.warning(f"Smart reload failed, falling back to check: {e}")
+            # Fallback: just do a basic check
+            return self._basic_change_check(verbose)
+    
+    def _basic_change_check(self, verbose: bool = False) -> bool:
+        """
+        Basic change detection without FileWatcher.
+        Fallback method - compares file counts.
+        """
+        current_count = len(list(self.docs_dir.glob("*.md")))
+        
+        if current_count != len(self.documents):
+            if verbose:
+                print(f"📁 File count changed ({len(self.documents)} → {current_count}), reloading...")
+            self.force_reload(verbose=verbose)
+            return True
+        
+        return False
+    
+    def get_document_info(self) -> Dict:
+        """
+        Get detailed information about loaded documents.
+        
+        Useful for /docs command.
+        """
+        doc_info = {
+            "total_documents": len(self.documents),
+            "total_chunks": len(self.chunks),
+            "documents": []
+        }
+        
+        for doc in self.documents:
+            filepath = Path(doc['path'])
+            
+            # Get file stats
+            try:
+                stat = filepath.stat()
+                size_kb = stat.st_size / 1024
+                modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")
+            except:
+                size_kb = 0
+                modified = "Unknown"
+            
+            doc_info["documents"].append({
+                "filename": doc['filename'],
+                "size_kb": round(size_kb, 1),
+                "modified": modified,
+                "content_preview": doc['content'][:100] + "..." if len(doc['content']) > 100 else doc['content']
+            })
+        
+        return doc_info
 
 
 # Global instance (singleton pattern)
 _searcher_instance: Optional[MarkdownSearcher] = None
-
 
 def get_searcher() -> MarkdownSearcher:
     """Get or create searcher instance"""
@@ -210,7 +340,6 @@ def get_searcher() -> MarkdownSearcher:
     if _searcher_instance is None:
         _searcher_instance = MarkdownSearcher()
     return _searcher_instance
-
 
 def search_markdown(query: str, top_k: int = 3) -> Dict:
     """
@@ -221,6 +350,48 @@ def search_markdown(query: str, top_k: int = 3) -> Dict:
     searcher = get_searcher()
     return searcher.search(query, top_k=top_k)
 
+def reload_markdown_documents(force: bool = False, verbose: bool = True) -> Dict:
+    """
+    Global function to reload markdown documents.
+    
+    Can be called from CLI commands or agent.
+    
+    Args:
+        force: If True, always reload. If False, use smart reload
+        verbose: Print status messages
+        
+    Returns:
+        Status dictionary
+    """
+    searcher = get_searcher()
+    
+    if force:
+        searcher.force_reload(verbose=verbose)
+        return {"success": True, "action": "force_reload", "docs_loaded": len(searcher.documents)}
+    else:
+        reloaded = searcher.smart_reload(verbose=verbose)
+        return {
+            "success": True,
+            "action": "smart_reload",
+            "reloaded": reloaded,
+            "docs_loaded": len(searcher.documents)
+        }
+
+def list_markdown_documents() -> Dict:
+    """
+    Get list of all loaded markdown documents.
+    
+    For /docs command.
+    """
+    searcher = get_searcher()
+    info = searcher.get_document_info()
+    
+    return {
+        "success": True,
+        "total_documents": info["total_documents"],
+        "total_chunks": info["total_chunks"],
+        "documents": info["documents"]
+    }
 
 # Tool definition for LLM function calling
 MARKDOWN_TOOL_SCHEMA = {

@@ -18,6 +18,8 @@ from prompt_toolkit.history import FileHistory
 
 from config import Config
 from agent.core import AIAgent
+from rag.markdown_search import reload_markdown_documents, list_markdown_documents
+from rag.file_watcher import get_watcher
 
 console = Console()
 
@@ -68,6 +70,8 @@ def interactive_mode(agent: AIAgent):
 - Type your question normally
 - `/reset` - Clear conversation history  
 - `/stats` - Show session statistics
+- `/reload` - Force reload markdown documents
+- `/docs` - List all loaded documents
 - `/quit` or `/exit` - Exit
 
 **Try these questions:**
@@ -84,7 +88,7 @@ def interactive_mode(agent: AIAgent):
     
     while True:
         try:
-            user_input = session.prompt("\n[bold green]You:[/] ").strip()
+            user_input = session.prompt("\n[bold green]You:[/]").strip()
             
             if not user_input:
                 continue
@@ -103,6 +107,61 @@ def interactive_mode(agent: AIAgent):
                 stats = agent.get_stats()
                 console.print(f"\n[dim]Stats: {stats}[/]\n")
                 continue
+            
+            # ==================== NEW COMMANDS ====================
+            
+            elif user_input.lower() == '/reload':
+                console.print("\n[bold blue]🔄 Reloading markdown documents...[/]\n")
+                result = reload_markdown_documents(force=True, verbose=True)
+                
+                if result['success']:
+                    console.print(f"[green]✓ Reload complete! {result['docs_loaded']} documents loaded[/]\n")
+                else:
+                    console.print("[red]✗ Reload failed[/]\n")
+                continue
+            
+            elif user_input.lower() == '/reload-smart':
+                console.print("\n[bold blue]🔍 Checking for changes...[/]\n")
+                result = reload_markdown_documents(force=False, verbose=True)
+                
+                if result['reloaded']:
+                    console.print(f"[green]✓ Changes detected! Reloaded {result['docs_loaded']} documents[/]\n")
+                else:
+                    console.print("[dim]✓ No changes detected - documents up to date[/]\n")
+                continue
+            
+            elif user_input.lower() == '/docs':
+                console.print("\n[bold blue]📄 Loaded Documents:[/]\n")
+                result = list_markdown_documents()
+                
+                if result['success']:
+                    console.print(f"[dim]Total: {result['total_documents']} documents, {result['total_chunks']} chunks[/]\n")
+                    
+                    for doc in result['documents']:
+                        console.print(Panel(
+                            f"[bold]{doc['filename']}[/]\n"
+                            f"[dim]Size: {doc['size_kb']} KB | Modified: {doc['modified']}[/]\n\n"
+                            f"{doc['content_preview']}",
+                            border_style="green",
+                            padding=(0, 2)
+                        ))
+                    
+                    # Also show file watcher stats
+                    try:
+                        watcher = get_watcher()
+                        watcher_stats = watcher.get_stats()
+                        console.print(f"\n[dim]File Watcher: {watcher_stats['files_tracked']} files tracked[/]")
+                        if watcher_stats['recent_changes']:
+                            console.print(f"[dim]Recent changes: {watcher_stats['recent_changes']}[/]")
+                    except:
+                        pass
+                else:
+                    console.print("[red]✗ Failed to load document info[/]")
+                
+                console.print()
+                continue
+            
+            # ====================================================
             
             # Run agent
             agent.run(user_input, verbose=True)

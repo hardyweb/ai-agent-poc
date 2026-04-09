@@ -20,7 +20,7 @@ from config import Config
 from tools.search_docs import search_docs, TOOL_SCHEMA as DOCS_TOOL_SCHEMA
 from rag.markdown_search import search_markdown, MARKDOWN_TOOL_SCHEMA
 from agent.prompts import SYSTEM_PROMPT
-
+from rag.markdown_search import reload_markdown_documents
 # Setup logging
 Config.LOG_DIR.mkdir(exist_ok=True)
 logging.basicConfig(
@@ -90,6 +90,14 @@ class AIAgent:
         Supports BOTH tools!
         """
         logger.info(f"🔧 Executing tool: [{tool_name}] with args: {arguments}")
+        
+       # 🔥🔥🔥 AUTO-RELOAD: Check for markdown changes before search
+        if tool_name == "search_markdown":
+            try:
+                # Smart reload (only if changes detected)
+                reload_markdown_documents(force=False, verbose=False)
+            except Exception as e:
+                logger.debug(f"Auto-reload check skipped: {e}")
         
         # 🔥 Tool 1: SQLite Database Search
         if tool_name == "search_docs":
