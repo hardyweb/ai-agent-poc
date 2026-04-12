@@ -20,6 +20,7 @@ from config import Config
 from agent.core import AIAgent
 from rag.markdown_search import reload_markdown_documents, list_markdown_documents
 from rag.file_watcher import get_watcher
+from memory.manager import MemoryManager
 
 console = Console()
 
@@ -91,6 +92,13 @@ def interactive_mode(agent: AIAgent):
 - `/reload-smart` - Check & reload if changes detected
 - `/add` - Add new data from add_new_data.sql
 - `/docs` - List all loaded documents
+- `/profile` - Show user profile & memories
+- `/memory list` - Show all memories
+- `/memory add X=Y` - Add memory manually
+- `/memory delete X` - Delete memory
+- `/memory clear` - Clear all memories
+- `/forget X` - Quick delete memory
+- `/session` - Session statistics
 - `/quit` or `/exit` - Exit
 
 **Try these questions:**
@@ -126,6 +134,121 @@ def interactive_mode(agent: AIAgent):
             elif user_input.lower() == "/stats":
                 stats = agent.get_stats()
                 console.print(f"\n[dim]Stats: {stats}[/]\n")
+                continue
+
+            # ==================== MEMORY COMMANDS ====================
+
+            elif user_input.lower().startswith("/profile"):
+                console.print("\n[bold cyan]👤 User Profile & Memories:[/]\n")
+                memory = MemoryManager(user_id="default")
+                profile = memory.get_profile()
+                memories = memory.get_all_memories()
+
+                console.print(
+                    Panel(
+                        f"[bold]Name:[/] {profile.get('display_name') or 'Not set'}\n"
+                        f"[bold]Sessions:[/] {profile['total_sessions']}\n"
+                        f"[bold]Messages:[/] {profile['total_messages']}\n"
+                        f"[bold]Last seen:[/] {profile.get('last_seen_at') or 'N/A'}",
+                        title="Profile",
+                        border_style="cyan",
+                    )
+                )
+
+                if memories:
+                    console.print("\n[bold cyan]Memories:[/]")
+                    for mem in memories:
+                        console.print(
+                            Panel(
+                                f"[bold]{mem['key']}[/] = {mem['value']}\n"
+                                f"[dim]Type: {mem['type']} | Confidence: {mem['confidence']}[/]",
+                                border_style="green",
+                                padding=(0, 1),
+                            )
+                        )
+                else:
+                    console.print("\n[dim]No memories stored yet.[/]")
+                console.print()
+                continue
+
+            elif user_input.lower().startswith("/memory"):
+                parts = user_input.lower().split()
+                memory = MemoryManager(user_id="default")
+
+                if len(parts) == 1 or parts[1] == "list":
+                    memories = memory.get_all_memories()
+                    console.print("\n[bold cyan]All Memories:[/]")
+                    if memories:
+                        for mem in memories:
+                            console.print(
+                                f"  {mem['key']} = {mem['value']} ({mem['type']})"
+                            )
+                    else:
+                        console.print("[dim]No memories.[/]")
+                    console.print()
+                    continue
+
+                elif parts[1] == "add" and len(parts) >= 3:
+                    key_value = " ".join(parts[2:]).split("=", 1)
+                    if len(key_value) == 2:
+                        key, value = key_value[0].strip(), key_value[1].strip()
+                        memory.remember(key, value, source="manual")
+                        console.print(f"[green]✓ Added:[/] {key} = {value}\n")
+                    else:
+                        console.print("[red]Format: /memory add key=value[/]")
+                    continue
+
+                elif parts[1] == "delete" and len(parts) >= 3:
+                    key = " ".join(parts[2:])
+                    if memory.forget(key):
+                        console.print(f"[green]✓ Deleted:[/] {key}\n")
+                    else:
+                        console.print(f"[dim]Key not found:[/] {key}\n")
+                    continue
+
+                elif parts[1] == "clear":
+                    confirm = console.input(
+                        "[yellow]⚠️ Delete ALL memories? Type 'yes' to confirm: [/]"
+                    )
+                    if confirm.lower() == "yes":
+                        memory.forget_all()
+                        console.print("[green]✓ All memories cleared.[/]\n")
+                    else:
+                        console.print("[dim]Cancelled.[/]\n")
+                    continue
+
+                else:
+                    console.print(
+                        "Usage: /memory [list|add key=value|delete key|clear]\n"
+                    )
+                    continue
+
+            elif user_input.lower().startswith("/forget"):
+                parts = user_input.lower().split()
+                if len(parts) >= 2:
+                    memory = MemoryManager(user_id="default")
+                    key = " ".join(parts[1:])
+                    if memory.forget(key):
+                        console.print(f"[green]✓ Forgotten:[/] {key}\n")
+                    else:
+                        console.print(f"[dim]Key not found:[/] {key}\n")
+                    continue
+
+            elif user_input.lower() == "/session":
+                memory = MemoryManager(user_id="default")
+                stats = memory.get_stats()
+                console.print(
+                    Panel(
+                        f"[bold]User:[/] {stats['user_id']}\n"
+                        f"[bold]Sessions:[/] {stats['total_sessions']}\n"
+                        f"[bold]Messages:[/] {stats['total_messages']}\n"
+                        f"[bold]Memories:[/] {stats['total_memories']}\n"
+                        f"[bold]Last seen:[/] {stats['last_seen_at'] or 'N/A'}",
+                        title="Session Stats",
+                        border_style="purple",
+                    )
+                )
+                console.print()
                 continue
 
             # ==================== NEW COMMANDS ====================

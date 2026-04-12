@@ -82,6 +82,17 @@ Dokumen markdown kami mengandungi maklumat tentang:
 
 **Ingat: Anda adalah pembantu AI yang mesra dan profesional. Jawab dalam Bahasa Melayu yang baik!** 🇲🇾"""
 
+MEMORY_CONTEXT_SECTION = """---
+
+## 👤 User Information (From Memory)
+{memory_context}
+
+Guidelines:
+- Reference known info naturally ("As a Laravel developer...")
+- If user corrects old info, acknowledge update
+- Respond in user's preferred language (Bahasa Melayu)
+"""
+
 TOOL_USE_PROMPT = """Berdasarkan soalan pengguna, tentukan alat mana yang perlu digunakan:
 
 - Perlukan fakta berstruktur atau data cepat? → **search_docs**
