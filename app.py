@@ -177,6 +177,15 @@ def single_question_mode(agent: AIAgent, question: str):
     answer = agent.run(question, verbose=True)
     print(answer)
 
+try:
+    from tools.vector_search import get_vector_search
+    vector_search = get_vector_search()
+    stats = vector_search.get_stats()
+    console.print("[bold purple]🧠 Vector Search:[/] ChromaDB ready")
+    console.print(f"[dim]   Documents indexed: {stats['total_documents']}[/]")
+except Exception as e:
+    console.print("[dim]⚠️  Vector Search: Not available (keyword search only)[/]")
+    console.print(f"[dim]   Reason: {e}[/]")
 
 def main():
     parser = argparse.ArgumentParser(

@@ -25,7 +25,7 @@ class Config:
     # Agent Settings
     MAX_TOOL_ROUNDS = 5        # Prevent infinite loops
     TEMPERATURE = 0.1          # Low temp for deterministic tool calls
-    
+    CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./chroma_data")
     @classmethod
     def validate(cls):
         """Validate required configuration"""
