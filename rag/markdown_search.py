@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DocumentChunk:
     """Represents a chunk of text from a document"""
+
     content: str
     source: str
     section: str
@@ -28,7 +29,7 @@ class DocumentChunk:
 class MarkdownSearcher:
     """
     RAG implementation for markdown files with hybrid search.
-    
+
     Supports:
     - Keyword-based search (original)
     - Vector/semantic search via ChromaDB (new)
@@ -57,12 +58,10 @@ class MarkdownSearcher:
 
         for md_file in self.docs_dir.glob("*.md"):
             try:
-                content = md_file.read_text(encoding='utf-8')
-                self.documents.append({
-                    'filename': md_file.name,
-                    'path': str(md_file),
-                    'content': content
-                })
+                content = md_file.read_text(encoding="utf-8")
+                self.documents.append(
+                    {"filename": md_file.name, "path": str(md_file), "content": content}
+                )
                 print(f"✓ Loaded: {md_file.name}")
             except Exception as e:
                 print(f"✗ Error loading {md_file.name}: {e}")
@@ -72,30 +71,34 @@ class MarkdownSearcher:
     def _create_chunks(self):
         """Split documents into searchable chunks"""
         for doc in self.documents:
-            content = doc['content']
-            filename = doc['filename']
+            content = doc["content"]
+            filename = doc["filename"]
 
-            # Split by H2 headers (##)
-            sections = re.split(r'\n(?=## )', content)
+            # Split by H1 or H2 headers (# or ##)
+            sections = re.split(r"\n(?=#+ )", content)
 
             for section in sections[:20]:  # Limit sections per doc
                 clean_text = section.strip()
 
                 if len(clean_text) > 50:  # Skip very short sections
                     # Extract section title
-                    title_match = re.match(r'^(#+)\s+(.+)$', clean_text)
-                    section_title = title_match.group(2) if title_match else "Introduction"
+                    title_match = re.match(r"^(#+)\s+(.+)$", clean_text)
+                    section_title = (
+                        title_match.group(2) if title_match else "Introduction"
+                    )
 
                     # Truncate if too long
                     if len(clean_text) > 1000:
                         clean_text = clean_text[:1000] + "..."
 
-                    self.chunks.append(DocumentChunk(
-                        content=clean_text,
-                        source=filename,
-                        section=section_title,
-                        relevance_score=0.0
-                    ))
+                    self.chunks.append(
+                        DocumentChunk(
+                            content=clean_text,
+                            source=filename,
+                            section=section_title,
+                            relevance_score=0.0,
+                        )
+                    )
 
         print(f"📦 Total chunks created: {len(self.chunks)}\n")
 
@@ -129,12 +132,7 @@ class MarkdownSearcher:
 
         return score
 
-    def search(
-        self,
-        query: str,
-        top_k: int = 3,
-        min_score: float = 1.0
-    ) -> Dict:
+    def search(self, query: str, top_k: int = 3, min_score: float = 1.0) -> Dict:
         """
         Keyword-based search (original method).
         Returns dictionary with search results.
@@ -144,7 +142,7 @@ class MarkdownSearcher:
                 "success": False,
                 "error": "No documents loaded",
                 "query": query,
-                "results": []
+                "results": [],
             }
 
         # Score all chunks
@@ -163,10 +161,12 @@ class MarkdownSearcher:
         # Format results
         results = [
             {
-                "content": chunk.content[:800] + "..." if len(chunk.content) > 800 else chunk.content,
+                "content": chunk.content[:800] + "..."
+                if len(chunk.content) > 800
+                else chunk.content,
                 "source": chunk.source,
                 "section": chunk.section,
-                "score": round(score, 2)
+                "score": round(score, 2),
             }
             for chunk, score in top_results
         ]
@@ -176,12 +176,12 @@ class MarkdownSearcher:
             "query": query,
             "count": len(results),
             "results": results,
-            "total_chunks_searched": len(self.chunks)
+            "total_chunks_searched": len(self.chunks),
         }
 
     def list_available_docs(self) -> List[str]:
         """List all loaded document filenames"""
-        return [doc['filename'] for doc in self.documents]
+        return [doc["filename"] for doc in self.documents]
 
     # ================================================================
     # NEW: Vector Search Integration Methods
@@ -197,14 +197,13 @@ class MarkdownSearcher:
             # Prepare documents for indexing
             docs_to_index = []
             for idx, chunk in enumerate(self.chunks):
-                docs_to_index.append({
-                    "id": f"{chunk.source}_{idx}",
-                    "content": chunk.content,
-                    "metadata": {
-                        "source": chunk.source,
-                        "section": chunk.section
+                docs_to_index.append(
+                    {
+                        "id": f"{chunk.source}_{idx}",
+                        "content": chunk.content,
+                        "metadata": {"source": chunk.source, "section": chunk.section},
                     }
-                })
+                )
 
             if docs_to_index:
                 count = vs.index_documents(docs_to_index)
@@ -227,16 +226,17 @@ class MarkdownSearcher:
         BEST RESULTS - Use this!
         """
         # Step 1: Keyword search (existing method)
-        keyword_result = self.search(query, top_k=top_k*2, min_score=0.5)
-        keyword_results = keyword_result.get('results', [])
+        keyword_result = self.search(query, top_k=top_k * 2, min_score=0.5)
+        keyword_results = keyword_result.get("results", [])
 
         # Step 2: Vector search (if enabled)
         vector_results_raw = []
         if self._vector_enabled:
             try:
                 from tools.vector_search import get_vector_search
+
                 vs = get_vector_search()
-                vector_results_raw = vs.search(query, top_k=top_k*2)
+                vector_results_raw = vs.search(query, top_k=top_k * 2)
             except Exception as e:
                 logger.debug(f"Vector search unavailable: {e}")
 
@@ -244,51 +244,74 @@ class MarkdownSearcher:
         merged = {}
 
         # Process keyword results (weight: 40%)
+        seen_sources = {}  # Track first occurrence per source
         for result in keyword_results:
-            key = (result['source'], result['section'])
-            score = result.get('score', 0) * 0.4
-
-            merged[key] = {
-                **result,
-                'combined_score': score,
-                'match_type': 'keyword'
-            }
+            source = result["source"]
+            # Use first match per source, or create unique key
+            if source not in seen_sources:
+                seen_sources[source] = result
+                key = (source, result["section"])
+                score = result.get("score", 0) * 0.4
+                merged[key] = {
+                    **result,
+                    "combined_score": score,
+                    "match_type": "keyword",
+                }
+            else:
+                # Add additional high-scoring results with unique keys
+                key = (source, result["section"], result.get("content", "")[:50])
+                score = result.get("score", 0) * 0.4
+                merged[key] = {
+                    **result,
+                    "combined_score": score,
+                    "match_type": "keyword",
+                }
 
         # Process vector results (weight: 60%)
+        seen_vector = {}
         for v_result in vector_results_raw:
-            key = (v_result.source, v_result.section)
+            source = v_result.source
+            if source not in seen_vector:
+                seen_vector[source] = v_result
+                key = (v_result.source, v_result.section)
+            else:
+                key = (v_result.source, v_result.section, v_result.content[:50])
             score = v_result.score * 0.6
 
             if key in merged:
                 # Boost existing entry
-                merged[key]['combined_score'] += score
-                merged[key]['match_type'] += '+vector'
+                merged[key]["combined_score"] += score
+                merged[key]["match_type"] += "+vector"
             elif score >= 0.2:
                 merged[key] = {
-                    'content': v_result.content,
-                    'source': v_result.source,
-                    'section': v_result.section,
-                    'score': round(score, 2),
-                    'combined_score': round(score, 2),
-                    'match_type': 'vector'
+                    "content": v_result.content,
+                    "source": v_result.source,
+                    "section": v_result.section,
+                    "score": round(score, 2),
+                    "combined_score": round(score, 2),
+                    "match_type": "vector",
                 }
 
         # Sort by combined score
         sorted_results = sorted(
-            merged.values(),
-            key=lambda x: x['combined_score'],
-            reverse=True
+            merged.values(), key=lambda x: x["combined_score"], reverse=True
         )[:top_k]
 
-        logger.info(f"🔀 Hybrid: '{query[:30]}...' → {len(sorted_results)} results "
-                   f"(keyword: {len(keyword_results)}, vector: {len(vector_results_raw)})")
+        # Fallback: if no results from hybrid, return keyword results directly
+        if not sorted_results and keyword_results:
+            sorted_results = keyword_results[:top_k]
+
+        logger.info(
+            f"🔀 Hybrid: '{query[:30]}...' → {len(sorted_results)} results "
+            f"(keyword: {len(keyword_results)}, vector: {len(vector_results_raw)})"
+        )
 
         return {
             "success": True,
             "query": query,
             "count": len(sorted_results),
             "results": sorted_results,
-            "search_type": "hybrid"
+            "search_type": "hybrid",
         }
 
     # ================================================================
@@ -320,7 +343,9 @@ class MarkdownSearcher:
             print(f"   Chunks: {old_chunk_count} → {len(self.chunks)}")
             print("=" * 60 + "\n")
 
-        logger.info(f"🔄 Documents reloaded | Docs: {len(self.documents)}, Chunks: {len(self.chunks)}")
+        logger.info(
+            f"🔄 Documents reloaded | Docs: {len(self.documents)}, Chunks: {len(self.chunks)}"
+        )
 
     def smart_reload(self, verbose: bool = True) -> bool:
         """Smart reload: check for changes first, only reload if needed"""
@@ -352,7 +377,9 @@ class MarkdownSearcher:
 
         if current_count != len(self.documents):
             if verbose:
-                print(f"📁 File count changed ({len(self.documents)} → {current_count}), reloading...")
+                print(
+                    f"📁 File count changed ({len(self.documents)} → {current_count}), reloading..."
+                )
             self.force_reload(verbose=verbose)
             return True
 
@@ -363,26 +390,32 @@ class MarkdownSearcher:
         doc_info = {
             "total_documents": len(self.documents),
             "total_chunks": len(self.chunks),
-            "documents": []
+            "documents": [],
         }
 
         for doc in self.documents:
-            filepath = Path(doc['path'])
+            filepath = Path(doc["path"])
 
             try:
                 stat = filepath.stat()
                 size_kb = stat.st_size / 1024
-                modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")
+                modified = datetime.fromtimestamp(stat.st_mtime).strftime(
+                    "%Y-%m-%d %H:%M"
+                )
             except:
                 size_kb = 0
                 modified = "Unknown"
 
-            doc_info["documents"].append({
-                "filename": doc['filename'],
-                "size_kb": round(size_kb, 1),
-                "modified": modified,
-                "content_preview": doc['content'][:100] + "..." if len(doc['content']) > 100 else doc['content']
-            })
+            doc_info["documents"].append(
+                {
+                    "filename": doc["filename"],
+                    "size_kb": round(size_kb, 1),
+                    "modified": modified,
+                    "content_preview": doc["content"][:100] + "..."
+                    if len(doc["content"]) > 100
+                    else doc["content"],
+                }
+            )
 
         return doc_info
 
@@ -407,7 +440,7 @@ def search_markdown(query: str, top_k: int = 3) -> Dict:
     searcher = get_searcher()
 
     # Use hybrid search if vector enabled, otherwise fallback to keyword
-    if hasattr(searcher, '_vector_enabled') and searcher._vector_enabled:
+    if hasattr(searcher, "_vector_enabled") and searcher._vector_enabled:
         return searcher.search_hybrid(query, top_k=top_k)
     else:
         return searcher.search(query, top_k=top_k)
@@ -419,14 +452,18 @@ def reload_markdown_documents(force: bool = False, verbose: bool = True) -> Dict
 
     if force:
         searcher.force_reload(verbose=verbose)
-        return {"success": True, "action": "force_reload", "docs_loaded": len(searcher.documents)}
+        return {
+            "success": True,
+            "action": "force_reload",
+            "docs_loaded": len(searcher.documents),
+        }
     else:
         reloaded = searcher.smart_reload(verbose=verbose)
         return {
             "success": True,
             "action": "smart_reload",
             "reloaded": reloaded,
-            "docs_loaded": len(searcher.documents)
+            "docs_loaded": len(searcher.documents),
         }
 
 
@@ -439,7 +476,7 @@ def list_markdown_documents() -> Dict:
         "success": True,
         "total_documents": info["total_documents"],
         "total_chunks": info["total_chunks"],
-        "documents": info["documents"]
+        "documents": info["documents"],
     }
 
 
@@ -454,15 +491,15 @@ MARKDOWN_TOOL_SCHEMA = {
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Search query - keywords or question about documentation content"
+                    "description": "Search query - keywords or question about documentation content",
                 },
                 "top_k": {
                     "type": "integer",
                     "description": "Number of results to return (default 3)",
-                    "default": 3
-                }
+                    "default": 3,
+                },
             },
-            "required": ["query"]
-        }
-    }
+            "required": ["query"],
+        },
+    },
 }
